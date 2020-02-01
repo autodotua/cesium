@@ -33,6 +33,7 @@
   "module": "Source/Cesium.js",
   "type": "module",
   "dependencies": {
+    "@types/cesium": "^1.65.1",
     "esm": "^3.2.25"
   },
   "devDependencies": {

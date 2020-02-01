@@ -38,7 +38,7 @@ function main() {
        saveCamera=false    Don't automatically update the camera view in the URL when it changes.
      */
     var endUserOptions = queryToObject(window.location.search.substring(1));
-
+    console.log(endUserOptions);
     var imageryProvider;
     if (defined(endUserOptions.tmsImageryUrl)) {
         imageryProvider = new TileMapServiceImageryProvider({
@@ -90,7 +90,6 @@ function main() {
     viewer.dropError.addEventListener(function(viewerArg, name, error) {
         showLoadError(name, error);
     });
-
     var scene = viewer.scene;
     var context = scene.context;
     if (endUserOptions.debug) {
