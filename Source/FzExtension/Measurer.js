@@ -48,7 +48,73 @@ var PolyLinePrimitive = (function() {
     return _;
 })();
 
-Measurer.prototype.measureLineSpace = function() {
+// var PolygonPrimitive = (function() {
+//     function _(positions) {
+//         this.options = {
+//             name: '面',
+//             polygon: {
+//                 show: true,
+//                 hierarchy:{
+//                     positions:[105,20,117,20,122,30,105,30]
+//                  },
+//                 positions: [],
+//                 material: Color.CHARTREUSE,
+//                 width: 2
+//             }
+//         };
+//         this.positions = positions;
+//         this._init();
+//     }
+
+//     _.prototype._init = function() {
+//         var _self = this;
+//         var _update = function() {
+//             return _self.positions;
+//         };
+//         //实时更新polyline.positions
+//         this.options.polygon.positions = new CallbackProperty(_update, false);
+//         viewer.entities.add(this.options);
+//     };
+
+//     return _;
+// })();
+
+var listens = {};
+
+Measurer.prototype.on = function(type, handler) {
+    if (typeof (type) === 'string') {
+        if (!defined(listens[type])) {
+            listens[type] = [];
+        }
+        listens[type].push(handler);
+    }
+};
+
+var notify = function(type, data) {
+    if (listens[type]) {
+        for (const handler of listens[type]) {
+            handler(data);
+        }
+    }
+};
+
+function getLocation(position, modelFirst) {
+    let cartesian;
+    if (modelFirst) {
+        cartesian = viewer.scene.pickPosition(position);
+    }
+    if (!defined(cartesian)) {
+        cartesian = viewer.scene.camera.pickEllipsoid(position, viewer.scene.globe.ellipsoid);
+        // if (!defined(cartesian)) {
+        //     //把光标移动到地球外面的时候，位置会返回空
+        //     console.log('cartesian is undefined');
+        //     return null;
+        // }
+    }
+    return cartesian;
+}
+
+Measurer.prototype.measureLength = function(modelFirst = true) {
     var handler = new ScreenSpaceEventHandler(viewer.scene._imageryLayerCollection);
     var positions = [];
     var poly = null;
@@ -58,58 +124,36 @@ Measurer.prototype.measureLineSpace = function() {
 
     //鼠标移动事件
     handler.setInputAction(function(movement) {
-
-        ///////=================================
-
-        cartesian = viewer.scene.pickPosition(movement.endPosition);
-        if (!cartesian) {
-            cartesian = viewer.scene.camera.pickEllipsoid(movement.endPosition, viewer.scene.globe.ellipsoid);
-            if (!cartesian) {
-                //把光标移动到地球外面的时候，位置会返回空
-                console.log('cartesian is undefined');
-                return;
-            }
+        cartesian = getLocation(movement.endPosition, modelFirst);
+        if (!defined(cartesian)) {
+            return;
         }
-        /////==================================
-        //cartesian = viewer.scene.camera.pickEllipsoid(movement.endPosition, viewer.scene.globe.ellipsoid);
         if (positions.length >= 2) {
             if (!defined(poly)) {
                 poly = new PolyLinePrimitive(positions);
             } else {
                 positions.pop();
-                // cartesian.y += (1 + Math.random());
                 positions.push(cartesian);
             }
             distance = getSpaceDistance(positions);
-            // console.log("distance: " + distance);
-            // tooltip.innerHTML='<p>'+distance+'米</p>';
         }
     }, ScreenSpaceEventType.MOUSE_MOVE);
 
     //鼠标左键单击事件
     handler.setInputAction(function(movement) {
         // cartesian = viewer.scene.camera.pickEllipsoid(movement.position, viewer.scene.globe.ellipsoid);
-        cartesian = viewer.scene.pickPosition(movement.position);
-
-        if (!cartesian) {
-            cartesian = viewer.scene.camera.pickEllipsoid(movement.position, viewer.scene.globe.ellipsoid);
-            if (!cartesian) {
-                //把光标移动到地球外面的时候，位置会返回空
-                console.log('cartesian is undefined');
-                return;
-            }
+        cartesian = getLocation(movement.position, modelFirst);
+        if (!defined(cartesian)) {
+            return;
         }
         if (positions.length === 0) {
             positions.push(cartesian.clone());
         }
         positions.push(cartesian);
         //在三维场景中添加Label
-        // var cartographic = Cesium.Cartographic.fromCartesian(cartesian);
-        var textDisance = distance + '米';
-        // console.log(textDisance + ",lng:" + cartographic.longitude/Math.PI*180.0);
+        var textDisance = distance.toFixed(2) + 'm';
         floatingPoint = viewer.entities.add({
             name: '空间直线距离',
-            // position: Cesium.Cartesian3.fromDegrees(cartographic.longitude / Math.PI * 180, cartographic.latitude / Math.PI * 180,cartographic.height),
             position: positions[positions.length - 1],
             point: {
                 pixelSize: 5,
@@ -129,12 +173,90 @@ Measurer.prototype.measureLineSpace = function() {
                 heightReference: HeightReference.NONE
             }
         });
+
+        notify('left_click', cartesian);
     }, ScreenSpaceEventType.LEFT_CLICK);
 
     //鼠标左键双击事件
     handler.setInputAction(function(movement) {
         handler.destroy();//关闭事件句柄
         positions.pop();//最后一个点无效
+        viewer.entities.remove(floatingPoint);
+
+    }, ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+};
+
+Measurer.prototype.measure2DArea = function(modelFirst = true) {
+    var handler = new ScreenSpaceEventHandler(viewer.scene._imageryLayerCollection);
+    var positions = [];
+    var poly = null;
+    var area = 0;
+    var cartesian;
+    var floatingPoint;
+
+    //鼠标移动事件
+    handler.setInputAction(function(movement) {
+        cartesian = getLocation(movement.endPosition, modelFirst);
+        if (!defined(cartesian)) {
+            return;
+        }
+        if (positions.length >= 2) {
+            if (!defined(poly)) {
+                poly = new PolyLinePrimitive(positions);
+            } else {
+                positions.pop();
+                // cartesian.y += (1 + Math.random());
+                positions.push(cartesian);
+            }
+            area = get3DArea(positions);
+        }
+    }, ScreenSpaceEventType.MOUSE_MOVE);
+
+    //鼠标左键单击事件
+    handler.setInputAction(function(movement) {
+        cartesian = getLocation(movement.position, modelFirst);
+        if (!defined(cartesian)) {
+            return;
+        }
+        if (positions.length === 0) {
+            positions.push(cartesian.clone());
+        }
+        positions.push(cartesian);
+        if (positions.length <= 3) {
+            return;
+        }
+        //在三维场景中添加Label
+        var textDisance = area.toFixed(2) + '㎡';
+        floatingPoint = viewer.entities.add({
+            name: '空间直线距离',
+            position: positions[positions.length - 1],
+            point: {
+                pixelSize: 5,
+                color: Color.RED,
+                outlineColor: Color.WHITE,
+                outlineWidth: 2,
+                heightReference: HeightReference.NONE
+            },
+            label: {
+                text: textDisance,
+                font: '18px sans-serif',
+                fillColor: Color.GOLD,
+                style: LabelStyle.FILL_AND_OUTLINE,
+                outlineWidth: 2,
+                verticalOrigin: VerticalOrigin.BOTTOM,
+                pixelOffset: new Cartesian2(20, -20),
+                heightReference: HeightReference.NONE
+            }
+        });
+
+        notify('left_click', cartesian);
+    }, ScreenSpaceEventType.LEFT_CLICK);
+
+    //鼠标左键双击事件
+    handler.setInputAction(function(movement) {
+        handler.destroy();//关闭事件句柄
+        positions.pop();//最后一个点无效
+        positions.push(positions[0]);//最后一个点无效
         viewer.entities.remove(floatingPoint);
 
     }, ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
@@ -156,7 +278,35 @@ function getSpaceDistance(positions) {
         s = Math.sqrt(Math.pow(s, 2) + Math.pow(point2cartographic.height - point1cartographic.height, 2));
         distance = distance + s;
     }
-    return distance.toFixed(2);
+    return distance;
+}
+
+function getLength(p1, p2) {
+    return Math.sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y) + (p1.z - p2.z) * (p1.z - p2.z));
+}
+
+function get2DTriangleArea(positions) {
+    if (positions.length !== 3) {
+        return undefined;
+    }
+    let l1 = getLength(positions[0], positions[1]);
+    let l2 = getLength(positions[0], positions[2]);
+    let l3 = getLength(positions[1], positions[2]);
+
+    let p = (l1 + l2 + l3) / 2;
+    return Math.sqrt(p * (p - l1) * (p - l2) * (p - l3));
+}
+
+function get3DArea(positions) {
+    if (positions.length <= 2) {
+        return 0;
+    }
+    let sum = 0;
+    for (let i = 1; i < positions.length - 1; i++) {
+        let triangle = [positions[0], positions[i], positions[i + 1]];
+        sum += get2DTriangleArea(triangle);
+    }
+    return sum;
 }
 
 export default Measurer;
